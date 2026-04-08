@@ -1,0 +1,36 @@
+{
+  "model_type": "xgboost.XGBRegressor",
+  "features": [
+    "die_matrix",
+    "lifetime_2nd_strike_s",
+    "oee_cycle_time_s"
+  ],
+  "target": "lifetime_bath_s",
+  "hyperparameters": {
+    "n_estimators": 200,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42
+  },
+  "train_size": 100752,
+  "test_size": 25189,
+  "metrics": {
+    "rmse": 1.363,
+    "mae": 0.662,
+    "r2": 0.7775
+  },
+  "feature_importance": {
+    "lifetime_2nd_strike_s": 0.6806974411010742,
+    "oee_cycle_time_s": 0.2552403509616852,
+    "die_matrix": 0.0640622153878212
+  },
+  "die_matrices": [
+    4974,
+    5052,
+    5090,
+    5091
+  ],
+  "oee_median_for_imputation": 13.809999999999999
+}
