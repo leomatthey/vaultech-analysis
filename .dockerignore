@@ -1,0 +1,12 @@
+.venv/
+.git/
+notebooks/
+tests/
+docs/
+migrations/
+infra/
+scripts/
+data/*.csv.gz
+__pycache__/
+*.pyc
+.DS_Store
