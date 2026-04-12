@@ -38,10 +38,11 @@ class Predictor:
 
     def __init__(self, model_dir: Path = MODEL_DIR, gold_file: Path = GOLD_FILE):
         # 1. Load the trained XGBoost model written by notebook 05 in
-        #    native JSON format. Native JSON is portable across XGBoost
-        #    versions and is what the SageMaker container expects in Task 10.
+        #    UBJ (Universal Binary JSON) format. UBJ is the binary format
+        #    that the SageMaker built-in XGBoost container (3.0-5) reads
+        #    correctly, avoiding JSON base_score parsing issues.
         self._model = XGBRegressor()
-        self._model.load_model(model_dir / "xgboost_bath_predictor.json")
+        self._model.load_model(model_dir / "xgboost_bath_predictor.ubj")
 
         # 2. Load the metadata produced alongside the model.
         #    This drives feature ordering, matrix validation, and the

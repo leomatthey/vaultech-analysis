@@ -12,19 +12,20 @@
     "learning_rate": 0.1,
     "subsample": 0.8,
     "colsample_bytree": 0.8,
+    "base_score": 0.5,
     "random_state": 42
   },
   "train_size": 100752,
   "test_size": 25189,
   "metrics": {
-    "rmse": 1.363,
-    "mae": 0.662,
-    "r2": 0.7775
+    "rmse": 1.3633,
+    "mae": 0.6629,
+    "r2": 0.7774
   },
   "feature_importance": {
-    "lifetime_2nd_strike_s": 0.6806974411010742,
-    "oee_cycle_time_s": 0.2552403509616852,
-    "die_matrix": 0.0640622153878212
+    "lifetime_2nd_strike_s": 0.7036260962486267,
+    "oee_cycle_time_s": 0.2546261250972748,
+    "die_matrix": 0.04174777865409851
   },
   "die_matrices": [
     4974,
