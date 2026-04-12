@@ -10,7 +10,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 # --- Runtime files only ---
 COPY app/ app/
 COPY src/ src/
-COPY models/ models/
+COPY models/model_metadata.json models/model_metadata.json
 COPY data/gold/ data/gold/
 
 # Install the project itself (vaultech_analysis package)

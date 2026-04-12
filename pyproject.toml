@@ -13,7 +13,6 @@ dependencies = [
     "psycopg2-binary",
     "pyarrow",
     "pytest",
-    "sagemaker>=3.7.1",
     "scikit-learn",
     "sqlalchemy",
     "streamlit>=1.40",
@@ -40,6 +39,7 @@ update_changelog_on_bump = false
 [dependency-groups]
 dev = [
     "pytest-playwright>=0.7.2",
+    "sagemaker>=3.7.1",
 ]
 # Note: version appears in both [project] and [tool.commitizen].
 # This is required — commitizen reads its own version field and

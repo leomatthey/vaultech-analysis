@@ -306,3 +306,27 @@ chart = (
 )
 
 st.altair_chart(chart, use_container_width=True)
+
+# --- Inference debug panel (SageMaker mode only) ---
+# Call predict() for this single piece to get debug info (payload, response, latency).
+# This is a separate call from predict_batch() — it shows the real-time round-trip
+# for one piece, proving the prediction comes from the SageMaker endpoint.
+oee_val = float(piece["oee_cycle_time_s"]) if pd.notna(piece["oee_cycle_time_s"]) else None
+debug_result = predictor.predict(
+    die_matrix=matrix,
+    lifetime_2nd_strike_s=float(piece["lifetime_2nd_strike_s"]),
+    oee_cycle_time_s=oee_val,
+)
+
+if "sagemaker_payload" in debug_result:
+    with st.expander("Inference Debug (SageMaker)", expanded=True):
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("Predicted Bath Time", f"{debug_result['predicted_bath_time_s']} s")
+        col_b.metric("Round-trip Latency", f"{debug_result['sagemaker_latency_ms']:.0f} ms")
+        col_c.metric("Endpoint", debug_result.get("sagemaker_payload", "").split(",")[0])
+
+        st.markdown("**Payload sent to endpoint:**")
+        st.code(debug_result["sagemaker_payload"], language="text")
+
+        st.markdown("**Raw response from endpoint:**")
+        st.code(debug_result["sagemaker_raw_response"], language="text")

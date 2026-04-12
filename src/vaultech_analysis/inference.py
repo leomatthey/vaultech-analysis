@@ -1,7 +1,9 @@
 """
 Inference service for predicting total piece travel time.
 
-Loads the trained XGBoost model and provides predictions.
+Supports two modes controlled by the SAGEMAKER_ENDPOINT_NAME env var:
+- Local mode (default): loads the XGBoost model from disk
+- Remote mode: calls the SageMaker endpoint via boto3
 
 Usage as CLI:
     uv run python -m vaultech_analysis.inference --die-matrix 5052 --strike2 18.3 --oee 13.5
@@ -14,8 +16,11 @@ Usage as module (for Streamlit):
 
 import argparse
 import json
+import os
+import time
 from pathlib import Path
 
+import boto3
 import pandas as pd
 from xgboost import XGBRegressor
 
@@ -27,26 +32,33 @@ GOLD_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "gold" / "p
 class Predictor:
     """Loads the trained model and provides predictions.
 
-    Loads three things at init:
-      1. The trained XGBoost model (xgboost_bath_predictor.json)
-      2. The model metadata (features, metrics, valid matrices, OEE median)
-      3. Reference cumulative + partial profiles per die matrix (for Streamlit)
-
-    Loading once at init means downstream consumers (CLI, Streamlit, tests)
-    don't pay the cost on every prediction call.
+    Dual-mode: if SAGEMAKER_ENDPOINT_NAME is set, predictions are made via
+    the SageMaker endpoint (remote mode). Otherwise, the model is loaded
+    from disk (local mode). This allows:
+    - Local development and tests to work without AWS credentials
+    - The Fargate-deployed app to use the SageMaker endpoint
     """
 
     def __init__(self, model_dir: Path = MODEL_DIR, gold_file: Path = GOLD_FILE):
-        # 1. Load the trained XGBoost model written by notebook 05 in
-        #    UBJ (Universal Binary JSON) format. UBJ is the binary format
-        #    that the SageMaker built-in XGBoost container (3.0-5) reads
-        #    correctly, avoiding JSON base_score parsing issues.
-        self._model = XGBRegressor()
-        self._model.load_model(model_dir / "xgboost_bath_predictor.ubj")
+        # Check for remote mode via environment variable
+        self._endpoint_name = os.environ.get("SAGEMAKER_ENDPOINT_NAME")
+        self._region = os.environ.get("AWS_DEFAULT_REGION", "eu-west-1")
+        self._remote = self._endpoint_name is not None
 
-        # 2. Load the metadata produced alongside the model.
-        #    This drives feature ordering, matrix validation, and the
-        #    OEE imputation value used both here and in tests.
+        # In remote mode, create a SageMaker runtime client instead of
+        # loading the model binary. The client is reused for all predictions.
+        if self._remote:
+            self._runtime_client = boto3.client(
+                "sagemaker-runtime", region_name=self._region
+            )
+            self._model = None
+        else:
+            self._model = XGBRegressor()
+            self._model.load_model(model_dir / "xgboost_bath_predictor.ubj")
+            self._runtime_client = None
+
+        # Metadata is needed in both modes: feature ordering, valid matrices,
+        # OEE median for imputation, and model metrics for the response.
         with open(model_dir / "model_metadata.json") as f:
             self._metadata = json.load(f)
 
@@ -55,11 +67,8 @@ class Predictor:
         self._valid_matrices: set[int] = set(self._metadata["die_matrices"])
         self._metrics: dict = self._metadata["metrics"]
 
-        # 3. Compute reference profiles per die matrix from the gold parquet.
-        #    The Streamlit detail panel (Task 8) uses these to show
-        #    "how does this piece compare to the matrix's typical piece".
-        #    Stored as nested dicts so consumers can do
-        #    predictor.get_reference_cumulative(5052)["lifetime_bath_s"].
+        # Reference profiles from gold parquet — used by the Streamlit detail
+        # panel in both modes to show piece vs matrix reference.
         self._reference_cumulative: dict = {}
         self._reference_partials: dict = {}
 
@@ -92,21 +101,9 @@ class Predictor:
     ) -> dict:
         """Predict total bath time from early-stage features.
 
-        Args:
-            die_matrix: integer matrix ID (must be one of the trained matrices)
-            lifetime_2nd_strike_s: cumulative time at the 2nd strike (~17-19s typical)
-            oee_cycle_time_s: rolling production rate; if None, the median is
-                used internally but the response echoes None to make missingness
-                visible to the caller.
-
-        Returns:
-            dict with the prediction, the inputs (echoed), and the model metrics.
-            Returns {"error": "..."} for unknown die_matrix values rather than
-            silently producing garbage predictions.
+        In remote mode, includes extra keys for the debug panel:
+        sagemaker_payload, sagemaker_raw_response, sagemaker_latency_ms.
         """
-        # Validate die_matrix early — return a clean error dict so callers
-        # don't have to wrap predict() in try/except for the common case
-        # of an invalid matrix coming from a UI dropdown or external system.
         if die_matrix not in self._valid_matrices:
             return {
                 "error": (
@@ -115,63 +112,96 @@ class Predictor:
                 )
             }
 
-        # OEE imputation. The model needs a real number, but we deliberately
-        # echo the original value (possibly None) in the response so the
-        # consumer can tell whether OEE was provided or imputed.
         oee_for_model = (
             oee_cycle_time_s if oee_cycle_time_s is not None else self._oee_median
         )
 
-        # Build a single-row DataFrame in the exact column order the model
-        # was trained on. XGBoost binds features by name when given a
-        # DataFrame, but ordering by self._features is defensive.
-        row = pd.DataFrame([{
-            "die_matrix": die_matrix,
-            "lifetime_2nd_strike_s": lifetime_2nd_strike_s,
-            "oee_cycle_time_s": oee_for_model,
-        }])[self._features]
+        if self._remote:
+            # Remote mode: call SageMaker endpoint with CSV payload
+            payload = f"{die_matrix},{lifetime_2nd_strike_s},{oee_for_model}"
 
-        prediction = float(self._model.predict(row)[0])
+            start = time.perf_counter()
+            response = self._runtime_client.invoke_endpoint(
+                EndpointName=self._endpoint_name,
+                ContentType="text/csv",
+                Body=payload,
+            )
+            latency_ms = (time.perf_counter() - start) * 1000
 
-        return {
-            "predicted_bath_time_s": round(prediction, 2),
-            "die_matrix": die_matrix,
-            "lifetime_2nd_strike_s": lifetime_2nd_strike_s,
-            "oee_cycle_time_s": oee_cycle_time_s,
-            "model_metrics": self._metrics,
-        }
+            raw_response = response["Body"].read().decode("utf-8").strip()
+            prediction = float(raw_response)
+
+            return {
+                "predicted_bath_time_s": round(prediction, 2),
+                "die_matrix": die_matrix,
+                "lifetime_2nd_strike_s": lifetime_2nd_strike_s,
+                "oee_cycle_time_s": oee_cycle_time_s,
+                "model_metrics": self._metrics,
+                "sagemaker_payload": payload,
+                "sagemaker_raw_response": raw_response,
+                "sagemaker_latency_ms": round(latency_ms, 1),
+            }
+        else:
+            # Local mode: run model.predict() directly
+            row = pd.DataFrame([{
+                "die_matrix": die_matrix,
+                "lifetime_2nd_strike_s": lifetime_2nd_strike_s,
+                "oee_cycle_time_s": oee_for_model,
+            }])[self._features]
+
+            prediction = float(self._model.predict(row)[0])
+
+            return {
+                "predicted_bath_time_s": round(prediction, 2),
+                "die_matrix": die_matrix,
+                "lifetime_2nd_strike_s": lifetime_2nd_strike_s,
+                "oee_cycle_time_s": oee_cycle_time_s,
+                "model_metrics": self._metrics,
+            }
 
     def predict_batch(self, df: pd.DataFrame) -> pd.Series:
         """Predict bath time for a DataFrame of pieces.
 
-        Vectorized: one model call for all rows. Missing OEE values are
-        filled with the median (same imputation rule as single-row predict).
-        Returns a Series of predictions indexed like the input DataFrame.
-
-        This is what Streamlit calls to get a "predicted_bath_s" column on
-        the entire gold dataset in one shot.
+        In remote mode, sends all rows as multi-line CSV in a single
+        invoke_endpoint call (~2.7MB for 167k rows, within the 6MB limit).
+        In local mode, uses the model directly (vectorized).
         """
-        # Copy so we don't mutate the caller's DataFrame
         X = df[self._features].copy()
         X["oee_cycle_time_s"] = X["oee_cycle_time_s"].fillna(self._oee_median)
 
-        predictions = self._model.predict(X)
-        return pd.Series(predictions, index=df.index, name="predicted_bath_time_s")
+        if self._remote:
+            # Send in chunks to stay within endpoint payload limits.
+            # Each row is ~20 bytes; chunks of 5000 rows (~100KB) are safe.
+            CHUNK_SIZE = 5000
+            all_predictions = []
+
+            for start in range(0, len(X), CHUNK_SIZE):
+                chunk = X.iloc[start:start + CHUNK_SIZE]
+                csv_lines = chunk.apply(
+                    lambda r: f"{int(r['die_matrix'])},{r['lifetime_2nd_strike_s']},{r['oee_cycle_time_s']}",
+                    axis=1,
+                )
+                payload = "\n".join(csv_lines)
+
+                response = self._runtime_client.invoke_endpoint(
+                    EndpointName=self._endpoint_name,
+                    ContentType="text/csv",
+                    Body=payload,
+                )
+                raw = response["Body"].read().decode("utf-8").strip()
+                all_predictions.extend(float(v) for v in raw.split("\n"))
+
+            return pd.Series(all_predictions, index=df.index, name="predicted_bath_time_s")
+        else:
+            predictions = self._model.predict(X)
+            return pd.Series(predictions, index=df.index, name="predicted_bath_time_s")
 
     def get_reference_cumulative(self, die_matrix: int) -> dict:
-        """Return median cumulative times for the given die matrix.
-
-        Used by the Streamlit detail panel to compare a piece against
-        its matrix's typical cumulative profile.
-        """
+        """Return median cumulative times for the given die matrix."""
         return self._reference_cumulative.get(die_matrix, {})
 
     def get_reference_partials(self, die_matrix: int) -> dict:
-        """Return median partial times for the given die matrix.
-
-        Used by the Streamlit detail panel to compare a piece against
-        its matrix's typical partial (per-segment) profile.
-        """
+        """Return median partial times for the given die matrix."""
         return self._reference_partials.get(die_matrix, {})
 
 
