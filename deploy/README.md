@@ -48,7 +48,7 @@ aws ecs update-service --cluster vaultech-cluster --service vaultech-streamlit-s
 | VPC | vaultech-vpc |
 | Security group | vaultech-ecs-sg |
 | AWS region | eu-west-1 |
-| Public URL | http://108.129.107.16:8501 |
+| Public URL | http://108.130.181.241:8501 |
 
 ## Validate SageMaker
 

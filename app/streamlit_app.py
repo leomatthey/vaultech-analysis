@@ -323,7 +323,7 @@ if "sagemaker_payload" in debug_result:
         col_a, col_b, col_c = st.columns(3)
         col_a.metric("Predicted Bath Time", f"{debug_result['predicted_bath_time_s']} s")
         col_b.metric("Round-trip Latency", f"{debug_result['sagemaker_latency_ms']:.0f} ms")
-        col_c.metric("Endpoint", debug_result.get("sagemaker_payload", "").split(",")[0])
+        col_c.metric("Endpoint", "vaultech-bath-predictor")
 
         st.markdown("**Payload sent to endpoint:**")
         st.code(debug_result["sagemaker_payload"], language="text")
