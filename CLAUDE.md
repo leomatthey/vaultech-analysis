@@ -62,6 +62,8 @@ Pipeline: `01_bronze_to_silver.ipynb` → `02_silver_to_gold.ipynb` → `03_buil
 ## Task Overview
 *Full detail: `docs/FINAL_PROJECT.md`*
 
+Before completing ANY TASK, read through the necessary documents to ensure you have a perfect understanding of all the required components
+
 | Tasks | Focus |
 |---|---|
 | 1–2 | Environment setup, data exploration |
@@ -86,7 +88,15 @@ Pipeline: `01_bronze_to_silver.ipynb` → `02_silver_to_gold.ipynb` → `03_buil
 | `uv run python -m vaultech_analysis.inference --die-matrix 5052 --strike2 18.3 --oee 13.5` | CLI prediction |
 
 
+## Working Protocol — before starting ANY task
+
+1. **Read the task spec**: open `docs/FINAL_PROJECT.md` and read the exact task description — count the specified steps, note the deliverables
+2. **Read referenced docs**: every doc mentioned in the task spec (e.g., `03_CleaningUpData.md`, `05_PredictiveModel.md`) must be read before writing code
+3. **Trace the data flow**: identify what produces the input, what this task produces, and what downstream tasks consume the output
+4. **Follow the spec exactly**: do not add steps the professor didn't specify, do not remove steps, do not rename or restructure unless the spec says to
+5. **Propose before acting**: for non-trivial changes, explain the approach and confirm before writing code — especially if it affects downstream tasks
+6. **Fix at the root**: if a change in task N breaks task N+1, the fix belongs where the root cause is — never apply narrow workarounds in downstream tasks that mask an upstream issue
+
 ## Critical Rules
 
-1. **Notebook quality**: each notebook opens with a markdown overview (what it does, where it sits in the pipeline, why), and has a markdown explanation before each major step. This is exam study material.
-2. **Git tag after every task**: `git tag task-NN && git push origin task-NN`
+1. **Git tag after every task**: `git tag task-NN && git push origin task-NN`
