@@ -1,0 +1,13 @@
+[project]
+name = "diagnose-api"
+version = "1.0.0"
+description = "Forging line delay diagnostics API"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
