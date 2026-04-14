@@ -1,0 +1,8 @@
+.venv/
+tests/
+scripts/
+validation_pieces.csv
+validation_expected.json
+__pycache__/
+*.pyc
+.pytest_cache/
